@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/assert"
 )
 
 const (
@@ -729,6 +730,7 @@ func TestCallAndCallTaggedSimple(t *testing.T) {
 	require.Nil(t, values[2])
 
 	values, err = injector.CallTagged(getSecondInterfaceTaggedNoTagsAndError)
+
 	require.NoError(t, err)
 	secondPtrStruct = values[0].(*SecondPtrStruct)
 	str = values[1].(string)
@@ -739,6 +741,73 @@ func TestCallAndCallTaggedSimple(t *testing.T) {
 }
 
 // ***** Populate tests *****
+
+// ***** Very Simple Populate Test
+
+type FlagsContainer struct {
+	Flags map[string]string
+}
+
+type PickupFlagsInterface interface {
+	GetFlag1() string
+	GetFlagMap() map[string]string
+}
+
+type PickupFlags struct {
+	// Note that injected fields have to be public, which is ugly.
+	Flag1 string `inject:"flags_f1"`
+	AllFlags *FlagsContainer `inject:"flags"`
+}
+
+func (p *PickupFlags) GetFlag1() string {
+	return p.Flag1
+}
+
+func (p* PickupFlags) GetFlagMap() map[string]string {
+	return p.AllFlags.Flags
+}
+
+func pickupFlagsConstructor() (PickupFlagsInterface, error) {
+	return &PickupFlags{}, nil
+}
+
+func TestPopulateVerySimple(t *testing.T) {
+	base_module := NewModule()
+	base_module.BindTaggedString("flags_f1").ToSingleton("v1")
+	flags_container := FlagsContainer{}
+	flags_container.Flags = make(map[string]string)
+	flags_container.Flags["f1"] = "v1"
+	base_module.BindTagged("flags", (&FlagsContainer{})).ToSingleton(&flags_container)
+
+	second_module := NewModule()
+	injector, err := NewInjector(base_module, second_module)
+	require.NoError(t, err)
+	pf := PickupFlags{}
+	err = injector.Populate(&pf)
+	require.NoError(t, err)
+	assert.Equal(t, "v1", pf.Flag1)
+	assert.Equal(t, "v1", pf.AllFlags.Flags["f1"])
+}
+
+func TestPopulateToBinding(t *testing.T) {
+
+	base_module := NewModule()
+	base_module.BindTaggedString("flags_f1").ToSingleton("v1")
+	flags_container := FlagsContainer{}
+	flags_container.Flags = make(map[string]string)
+	flags_container.Flags["f1"] = "v1"
+	base_module.BindTagged("flags", (&FlagsContainer{})).ToSingleton(&flags_container)
+
+	second_module := NewModule()
+	second_module.Bind((*PickupFlagsInterface)(nil)).ToSingletonConstructor(pickupFlagsConstructor)
+	injector, err := NewInjector(base_module, second_module)
+	require.NoError(t, err)
+	pf, err := injector.Get((*PickupFlagsInterface)(nil))
+	require.NoError(t, err)
+	pftype := pf.(PickupFlagsInterface)
+	assert.Equal(t, "v1", pftype.GetFlag1())
+	assert.Equal(t, "v1", pftype.GetFlagMap()["f1"])
+}
 
 type PopulateStructTwoTags struct {
 	S SimpleInterface `inject:"tagOne"`
